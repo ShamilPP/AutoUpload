@@ -355,7 +355,7 @@ async function uploadVideo(currentPath,title) {
 // }, 600000); // 10 minutes
 
 // Start the flow
-// promptThumbnailUrl();
+promptThumbnailUrl();
 // promptVideoUrl();
 // authenticate();
- splitAndUpload();
+//  splitAndUpload();
