@@ -10,6 +10,7 @@ const ffmpegPath = require('ffmpeg-static');
 ffmpeg.setFfmpegPath(ffmpegPath);
 const { v4: uuidv4 } = require('uuid');
 const tmp = require('tmp-promise'); // optional helper for temp files
+const { validateAuthToken } = require('./token_update'); // Adjust the path if needed
 
 // OAuth2 Client
 const oauth2Client = new google.auth.OAuth2(
@@ -143,26 +144,13 @@ function promptThumbnailUrl() {
 }
 // Step 2: Authenticate and Upload
 async function authenticate() {
-  if (fs.existsSync(tokenPath)) {
-    const tokenData = JSON.parse(fs.readFileSync(tokenPath, 'utf-8'));
-    oauth2Client.setCredentials(tokenData);
-    console.log('Using stored credentials...');
-    return splitAndUpload();
-  }
-
-  const authUrl = oauth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: ['https://www.googleapis.com/auth/youtube.upload']
-  });
-
-  console.log('Visit the following URL to authenticate:\n' + authUrl);
-
-  rl.question('Enter the code from the URL here: ', async (code) => {
-    rl.close();
-    const { tokens } = await oauth2Client.getToken(code);
-    oauth2Client.setCredentials(tokens);
-    fs.writeFileSync(tokenPath, JSON.stringify(tokens));
-    console.log('Successfully authenticated and tokens stored!');
+  validateAuthToken((err, credentials) => {
+    if (err) {
+      console.error('Auth failed:', err);
+      return;
+    }
+    // Now call your logic after successful auth
+    oauth2Client.setCredentials(credentials);
     splitAndUpload();
   });
 }
@@ -187,7 +175,7 @@ async function splitAndUpload() {
     }
 
     const duration = data.format.duration;
-    const partDuration =1200; // 20 minute
+    const partDuration = 1200; // 20 minute
     let partIndex = 1;
 
     for (let start = 0; start < duration; start += partDuration) {
@@ -195,11 +183,11 @@ async function splitAndUpload() {
       const partFilePath = path.join(outputDir, `Part-${partIndex}.mp4`);
 
       try {
-       const actualStart = (partIndex > 1) ? Math.max(start - 10, 0) : start;
+        const actualStart = (partIndex > 1) ? Math.max(start - 10, 0) : start;
         await processPart(inputPath, partFilePath, actualStart, partDuration);
         console.log(`Generated: ${partFilePath}`);
         partIndex++;
-        uploadVideo(partFilePath,partFileName);
+        uploadVideo(partFilePath, partFileName);
       } catch (error) {
         console.error(`Error processing part ${partIndex}:`, error);
         break;
@@ -209,15 +197,24 @@ async function splitAndUpload() {
 }
 
 async function processPart(inputPath, outputPath, startTime, duration) {
-    await new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .setStartTime(startTime)
-      .setDuration(duration)     
-      .output(outputPath)
-      .on('end', resolve)
-      .on('error', reject)
-      .run();
-  });
+await new Promise((resolve, reject) => {
+  ffmpeg(inputPath)
+    .setStartTime(startTime)
+    .setDuration(duration)
+    .output(outputPath)
+    .on('progress', (progress) => {
+      console.log(`Processing: ${progress.percent?.toFixed(2) || 0}%`);
+    })
+    .on('end', () => {
+      console.log('Processing finished successfully');
+      resolve();
+    })
+    .on('error', (err) => {
+      console.error('Error during processing:', err.message);
+      reject(err);
+    })
+    .run();
+});
   // const tempMainTs = outputPath.replace('.mp4', '_main.ts');
   // const tempEndCardTs = outputPath.replace('.mp4', '_endcard.ts');
   // const endCardPath = path.resolve(__dirname, 'video', 'end_card.mp4');
@@ -274,7 +271,7 @@ async function processPart(inputPath, outputPath, startTime, duration) {
   console.log('Video processing completed successfully.');
 }
 
-async function uploadVideo(currentPath,title) {
+async function uploadVideo(currentPath, title) {
 
   const video = fs.createReadStream(currentPath);
   const fileSize = fs.statSync(currentPath).size;
@@ -355,8 +352,8 @@ async function uploadVideo(currentPath,title) {
 // }, 600000); // 10 minutes
 
 // Start the flow
-promptThumbnailUrl();
+// promptThumbnailUrl();
 // promptVideoUrl();
-// authenticate();
+authenticate();
 //  splitAndUpload();
 
